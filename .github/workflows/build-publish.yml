@@ -1,7 +1,6 @@
-name: Build and Publish
+name: Build and Publish (Linux, Docker, PyPI)
 
 on:
-    # Manual trigger
     workflow_dispatch:
         inputs:
             force_build:
@@ -10,27 +9,25 @@ on:
                 type: boolean
                 default: false
             tag:
-                description: "Specific tag to build (leave empty for latest)"
+                description: "Specific upstream tag to build (e.g. v0.5.0)"
                 required: false
                 type: string
 
-    # Scheduled polling - runs every 6 hours
     schedule:
         - cron: "0 */6 * * *"
 
-    # Also trigger on push to main for testing
     push:
         branches: [main]
         paths:
             - "main.py"
+            - "Dockerfile"
+            - "pyproject.toml"
+            - "uv.lock"
             - ".github/workflows/**"
-
-env:
-    CARGO_TERM_COLOR: always
 
 jobs:
     check:
-        name: Check for new version
+        name: Check upstream version
         runs-on: ubuntu-latest
         outputs:
             should_build: ${{ steps.check.outputs.should_build }}
@@ -40,149 +37,28 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
+            - uses: actions/setup-python@v5
               with:
                   python-version: "3.11"
 
-            - name: Check for new version
-              id: check
+            - id: check
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                  if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
-                    echo "should_build=true" >> $GITHUB_OUTPUT
-                    if [ -n "${{ github.event.inputs.tag }}" ]; then
-                      TAG="${{ github.event.inputs.tag }}"
-                    else
-                      TAG=$(python scripts/build_release.py --check-only 2>&1 | grep "Latest GitHub" | awk '{print $NF}')
-                    fi
-                    echo "tag=$TAG" >> $GITHUB_OUTPUT
-                    echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-                  else
-                    python scripts/build_release.py --check-only
+                  ARGS="--check-only"
+
+                  if [ -n "${{ github.event.inputs.tag }}" ]; then
+                    ARGS="$ARGS --tag ${{ github.event.inputs.tag }}"
                   fi
 
-    build:
-        name: Build wheels on ${{ matrix.os }}
-        needs: check
-        if: needs.check.outputs.should_build == 'true'
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    # Linux x86_64
-                    - os: ubuntu-latest
-                      target: x86_64-unknown-linux-gnu
+                  if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+                    ARGS="$ARGS --force"
+                  fi
 
-                    # Linux aarch64
-                    - os: ubuntu-latest
-                      target: aarch64-unknown-linux-gnu
+                  python main.py $ARGS
 
-                    # macOS x86_64
-                    - os: macos-13
-                      target: x86_64-apple-darwin
-
-                    # macOS Apple Silicon
-                    - os: macos-14
-                      target: aarch64-apple-darwin
-
-                    # Windows x86_64
-                    - os: windows-latest
-                      target: x86_64-pc-windows-msvc
-
-        steps:
-            - uses: actions/checkout@v4
-
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                  python-version: "3.11"
-
-            - name: Install Rust
-              uses: dtolnay/rust-action@stable
-              with:
-                  targets: ${{ matrix.target }}
-
-            - name: Install cross-compilation tools (Linux aarch64)
-              if: matrix.target == 'aarch64-unknown-linux-gnu'
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y gcc-aarch64-linux-gnu
-
-            - name: Install maturin
-              run: pip install maturin
-
-            - name: Clone regorus
-              env:
-                  TAG: ${{ needs.check.outputs.tag }}
-              run: |
-                  git clone --depth 1 --branch $TAG https://github.com/microsoft/regorus.git regorus-src
-
-            - name: Update pyproject.toml
-              shell: python
-              env:
-                  VERSION: ${{ needs.check.outputs.version }}
-              run: |
-                  import os
-                  import re
-                  from pathlib import Path
-
-                  pyproject = Path("regorus-src/bindings/python/pyproject.toml")
-                  content = pyproject.read_text()
-                  version = os.environ["VERSION"]
-
-                  # Update package name only (keep module as 'regorus' to match PyInit_regorus)
-                  content = re.sub(
-                      r'name\s*=\s*"regorus"',
-                      'name = "celine-regorus"',
-                      content
-                  )
-
-                  # Update or add version
-                  if 'version = ' in content:
-                      content = re.sub(
-                          r'version\s*=\s*"[^"]*"',
-                          f'version = "{version}"',
-                          content
-                      )
-                  else:
-                      content = re.sub(
-                          r'name\s*=\s*"celine-regorus"',
-                          f'name = "celine-regorus"\nversion = "{version}"',
-                          content
-                      )
-
-                  pyproject.write_text(content)
-                  print(f"Updated pyproject.toml for celine-regorus v{version}")
-
-            - name: Build wheels (Linux)
-              if: runner.os == 'Linux'
-              uses: PyO3/maturin-action@v1
-              with:
-                  target: ${{ matrix.target }}
-                  args: --release --out dist
-                  manylinux: auto
-                  working-directory: regorus-src/bindings/python
-
-            - name: Build wheels (macOS/Windows)
-              if: runner.os != 'Linux'
-              uses: PyO3/maturin-action@v1
-              with:
-                  target: ${{ matrix.target }}
-                  args: --release --out dist
-                  working-directory: regorus-src/bindings/python
-
-            - name: Upload wheels
-              uses: actions/upload-artifact@v4
-              with:
-                  name: wheels-${{ matrix.target }}
-                  path: regorus-src/bindings/python/dist/*.whl
-
-    # Build source distribution
-    sdist:
-        name: Build source distribution
+    build_linux:
+        name: Build wheel (Linux via Dockerfile)
         needs: check
         if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
@@ -190,114 +66,51 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                  python-version: "3.11"
+            - name: Build Docker image
+              run: docker build -t celine-regorus-builder .
 
-            - name: Clone regorus
+            - name: Build wheel inside container
               env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ needs.check.outputs.tag }}
               run: |
-                  git clone --depth 1 --branch $TAG https://github.com/microsoft/regorus.git regorus-src
+                  mkdir -p dist
+                  docker run --rm \
+                    -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+                    -v "${{ github.workspace }}/dist:/app/dist" \
+                    celine-regorus-builder \
+                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist
 
-            - name: Update pyproject.toml
-              shell: python
-              env:
-                  VERSION: ${{ needs.check.outputs.version }}
+            - name: Smoke test wheel
               run: |
-                  import os
-                  import re
-                  from pathlib import Path
+                  python -m pip install --upgrade pip
+                  python -m pip install dist/*.whl
+                  python - <<'EOF'
+                  import regorus
+                  print("OK:", regorus)
+                  EOF
 
-                  pyproject = Path("regorus-src/bindings/python/pyproject.toml")
-                  content = pyproject.read_text()
-                  version = os.environ["VERSION"]
-
-                  # Update package name only (keep module as 'regorus' to match PyInit_regorus)
-                  content = re.sub(r'name\s*=\s*"regorus"', 'name = "celine-regorus"', content)
-
-                  if 'version = ' in content:
-                      content = re.sub(r'version\s*=\s*"[^"]*"', f'version = "{version}"', content)
-                  else:
-                      content = re.sub(r'name\s*=\s*"celine-regorus"', f'name = "celine-regorus"\nversion = "{version}"', content)
-
-                  pyproject.write_text(content)
-
-            - name: Build sdist
-              uses: PyO3/maturin-action@v1
+            - uses: actions/upload-artifact@v4
               with:
-                  command: sdist
-                  args: --out dist
-                  working-directory: regorus-src/bindings/python
-
-            - name: Upload sdist
-              uses: actions/upload-artifact@v4
-              with:
-                  name: sdist
-                  path: regorus-src/bindings/python/dist/*.tar.gz
+                  name: wheels-linux
+                  path: dist/*.whl
 
     publish:
         name: Publish to PyPI
-        needs: [check, build, sdist]
+        needs: [check, build_linux]
         if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
         environment: pypi
         permissions:
-            id-token: write # For trusted publishing
+            id-token: write
 
         steps:
-            - name: Download all artifacts
-              uses: actions/download-artifact@v4
+            - uses: actions/download-artifact@v4
               with:
                   path: dist
                   merge-multiple: true
 
-            - name: List artifacts
-              run: ls -la dist/
-
-            - name: Publish to PyPI
+            - name: Publish
               uses: pypa/gh-action-pypi-publish@release/v1
               with:
                   packages-dir: dist/
-                  # For testing, use TestPyPI first:
-                  # repository-url: https://test.pypi.org/legacy/
-
-    # Create a GitHub release
-    release:
-        name: Create GitHub Release
-        needs: [check, publish]
-        if: needs.check.outputs.should_build == 'true'
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-
-        steps:
-            - uses: actions/checkout@v4
-
-            - name: Download all artifacts
-              uses: actions/download-artifact@v4
-              with:
-                  path: dist
-                  merge-multiple: true
-
-            - name: Create Release
-              uses: softprops/action-gh-release@v1
-              with:
-                  tag_name: v${{ needs.check.outputs.version }}
-                  name: Release v${{ needs.check.outputs.version }}
-                  body: |
-                      Automated build of regorus Python bindings from [microsoft/regorus](https://github.com/microsoft/regorus) tag `${{ needs.check.outputs.tag }}`.
-
-                      ## Installation
-
-                      ```bash
-                      pip install celine-regorus==${{ needs.check.outputs.version }}
-                      ```
-
-                      ## Upstream Release
-
-                      See the [upstream release notes](https://github.com/microsoft/regorus/releases/tag/${{ needs.check.outputs.tag }}) for details.
-                  files: dist/*
-                  draft: false
-                  prerelease: false

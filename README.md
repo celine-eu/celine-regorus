@@ -1,8 +1,79 @@
 # celine-regorus
 
-Unofficial Python bindings for [Regorus](https://github.com/microsoft/regorus) - a fast, lightweight Rego interpreter written in Rust.
+Python wheels for **regorus** built and published by the CELINE project.
 
-This repository automatically builds and publishes Python wheels from the official [microsoft/regorus](https://github.com/microsoft/regorus) releases.
+This repository is **not** the upstream source code of regorus.
+It is an automated packaging repository whose only responsibility is to:
+
+- track upstream releases of `microsoft/regorus`
+- build Python wheels
+- publish them to PyPI under the name **`celine-regorus`**
+
+---
+
+## Scope and guarantees
+
+- **Supported platforms**
+  - Linux x86_64 ✅
+- **Not supported (by design)**
+  - macOS ❌
+  - Windows ❌
+  - Other architectures ❌
+
+If you need additional platforms, please open a PR.
+
+---
+
+## Build model (important)
+
+This project uses a **single source of truth for builds**:
+
+➡️ **The Dockerfile**
+
+All CI builds:
+- use the Dockerfile
+- run the exact same commands you can run locally
+- produce the same wheel artifacts
+
+There is intentionally **no multi-platform matrix**, no cibuildwheel, and no detached build logic.
+
+If CI succeeds, local Docker builds will succeed too.
+
+---
+
+## How wheels are built
+
+1. A scheduled or manual workflow checks upstream `microsoft/regorus` releases
+2. If a new version is found:
+   - the Docker image is built
+   - the container runs the build
+   - wheels are written to `/app/dist`
+3. The resulting Linux wheel is published to PyPI
+
+Publishing uses **PyPI Trusted Publishing** (OIDC).  
+No PyPI tokens are stored in this repository.
+
+---
+
+## Local build (reproduce CI exactly)
+
+Requirements:
+- Docker
+
+Build and run:
+
+```bash
+docker build -t celine-regorus-builder .
+docker run --rm -v "$PWD/dist:/app/dist" celine-regorus-builder
+```
+
+The wheel will be available in:
+
+```text
+dist/
+```
+
+---
 
 ## Installation
 
@@ -10,118 +81,34 @@ This repository automatically builds and publishes Python wheels from the offici
 pip install celine-regorus
 ```
 
-## Why this package?
+> Note: Only Linux wheels are provided.  
+> On other platforms, installation may fail or attempt a source build.
 
-The official `regorus` package may not always have up-to-date Python wheels published to PyPI. This package:
+---
 
-- Automatically monitors the official repository for new releases
-- Builds wheels for multiple platforms (Linux, macOS, Windows) and architectures (x86_64, aarch64)
-- Publishes to PyPI within hours of a new upstream release
+## Versioning
 
-## Usage
+- The published version matches the upstream `regorus` version
+- No additional semantic versioning is introduced
+- If upstream tags `v0.5.0`, PyPI publishes `celine-regorus==0.5.0`
 
-```python
-import regorus
+---
 
-# Create an engine
-engine = regorus.Engine()
+## Why this repo exists
 
-# Load a Rego policy
-engine.add_policy_from_file("policy.rego")
+This repo is intended as a temporary fix waiting for official python releases, will be deprecated afterwards.
 
-# Set input data
-engine.set_input({"user": "alice", "action": "read"})
+See https://github.com/microsoft/regorus/issues/168 for udpates
 
-# Evaluate a query
-result = engine.eval_query("data.authz.allow")
-print(result)
-```
 
-## Supported Platforms
+---
 
-| Platform | Architecture | Status |
-|----------|--------------|--------|
-| Linux | x86_64 | ✅ |
-| Linux | aarch64 | ✅ |
-| macOS | x86_64 | ✅ |
-| macOS | Apple Silicon | ✅ |
-| Windows | x86_64 | ✅ |
+## Contributing
 
-## Version Tracking
+PRs are welcome for:
+- macOS / Windows support
+- additional Linux architectures
+- build optimizations
+- documentation improvements
 
-This package tracks the official `microsoft/regorus` releases. The version number matches the upstream version.
-
-| celine-regorus | regorus upstream |
-|----------------|------------------|
-| 0.x.y | v0.x.y |
-
-## How it works
-
-1. A GitHub Actions workflow runs every 6 hours
-2. It checks the latest release tag from `microsoft/regorus`
-3. Compares with the latest version on PyPI
-4. If a new version is available, it:
-   - Clones the upstream repo at the release tag
-   - Builds wheels using maturin
-   - Publishes to PyPI using trusted publishing
-
-## Manual Trigger
-
-Maintainers can manually trigger a build:
-
-1. Go to Actions → "Build and Publish"
-2. Click "Run workflow"
-3. Optionally specify a tag or force a rebuild
-
-## Development
-
-### Local Build
-
-```bash
-# Install dependencies
-pip install maturin
-
-# Check for new versions
-python scripts/build_release.py --check-only
-
-# Build locally
-python scripts/build_release.py --force
-
-# Build a specific tag
-python scripts/build_release.py --tag v0.2.0
-```
-
-### Repository Setup
-
-1. **PyPI Trusted Publishing**: Configure trusted publishing in PyPI project settings:
-   - Publisher: GitHub Actions
-   - Repository: `your-username/celine-regorus`
-   - Workflow: `build-publish.yml`
-   - Environment: `pypi`
-
-2. **GitHub Environment**: Create a `pypi` environment in repository settings for deployment protection.
-
-## Monitoring Approach
-
-The workflow uses a polling strategy:
-
-- **Frequency**: Every 6 hours (configurable via cron)
-- **Method**: Compares GitHub release tags with PyPI versions
-- **Efficiency**: Only builds when a new version is detected
-
-Alternative approaches considered:
-- **Webhooks**: Would require a server to receive GitHub webhooks
-- **GitHub Actions `repository_dispatch`**: Would require a webhook receiver
-- **Manual monitoring**: Not automated
-
-The polling approach is simple, requires no infrastructure, and 6-hour intervals are sufficient for a library that releases infrequently.
-
-## License
-
-This build automation is provided under the MIT License.
-
-The Regorus library itself is licensed under the MIT License by Microsoft. See the [upstream repository](https://github.com/microsoft/regorus) for details.
-
-## Disclaimer
-
-This is an unofficial package. For official support, please refer to the [microsoft/regorus](https://github.com/microsoft/regorus) repository.
+Please keep the **Dockerfile as the canonical build definition**.
