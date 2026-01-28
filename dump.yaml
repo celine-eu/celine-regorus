@@ -1,0 +1,7 @@
+contents:
+  - main.py
+  - README.md
+  - Dockerfile
+  - taskfile.yaml
+  - pyproject.toml
+  - .github
