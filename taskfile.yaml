@@ -1,0 +1,14 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Build package
+      - docker build . -t celine-eu/celine-regorus
+  compile:
+    desc: Build package
+    cmds:
+      - docker run --rm -v ${PWD}/dist:/app/dist -v ${PWD}/main.py:/app/main.py celine-eu/celine-regorus
+  exec:
+    desc: exec container
+    cmds:
+      - docker run -it --rm -v ${PWD}/dist:/app/dist celine-eu/celine-regorus bash

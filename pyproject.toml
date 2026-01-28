@@ -1,0 +1,9 @@
+[project]
+name = "celine-regorus"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "maturin>=1.11.5",
+]
