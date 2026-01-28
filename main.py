@@ -253,9 +253,9 @@ def clone_and_build(
             raise RuntimeError(f"Python bindings not found at {python_bindings}")
 
         # Update pyproject.toml to use our package name
-        # pyproject_path = python_bindings / "pyproject.toml"
-        # if pyproject_path.exists():
-        #     update_pyproject_toml(pyproject_path, tag)
+        pyproject_path = python_bindings / "pyproject.toml"
+        if pyproject_path.exists():
+            update_pyproject_toml(pyproject_path, tag)
 
         # Build using maturin
         print("[INFO] Building wheel with maturin...")
@@ -298,20 +298,6 @@ def update_pyproject_toml(path: Path, tag: str):
     # Update package name (PyPI name can have hyphen)
     content = re.sub(r'name\s*=\s*"regorus"', f'name = "{PYPI_PACKAGE}"', content)
 
-    # Keep module-name as 'regorus' to match PyInit_regorus symbol
-    # (Don't add module-name, let it default to the Rust crate name)
-
-    # Ensure version is set correctly
-    if "version = " not in content:
-        # Add version after name
-        content = re.sub(
-            rf'name\s*=\s*"{PYPI_PACKAGE}"',
-            f'name = "{PYPI_PACKAGE}"\nversion = "{version}"',
-            content,
-        )
-    else:
-        content = re.sub(r'version\s*=\s*"[^"]*"', f'version = "{version}"', content)
-
     # Add description if not present
     if "description" not in content:
         content = re.sub(
@@ -319,6 +305,15 @@ def update_pyproject_toml(path: Path, tag: str):
             f'name = "{PYPI_PACKAGE}"\ndescription = "Python bindings for Regorus - a Rego interpreter (unofficial build)"',
             content,
         )
+
+    content = content.replace(
+        "[tool.maturin]",
+        """
+
+[tool.maturin]
+module-name = "regorus"
+""",
+    )
 
     path.write_text(content)
     print(f"[INFO] Updated pyproject.toml for {PYPI_PACKAGE} v{version}")
