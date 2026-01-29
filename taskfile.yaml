@@ -7,7 +7,13 @@ tasks:
   compile:
     desc: Build package
     cmds:
-      - docker run --rm -v ${PWD}/dist:/app/dist -v ${PWD}/main.py:/app/main.py celine-eu/celine-regorus
+      - |
+        docker run --rm \
+        -v ${PWD}/dist:/app/dist \
+        -v ${PWD}/main.py:/app/main.py \
+        -v ${PWD}/celine_regorus_builder:/app/celine_regorus_builder \
+        -v ${PWD}/stubs:/app/stubs \
+        celine-eu/celine-regorus python main.py {{.CLI_ARGS}}
   exec:
     desc: exec container
     cmds:

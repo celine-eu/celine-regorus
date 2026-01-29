@@ -1,14 +1,14 @@
 [project]
 name = "celine-regorus"
 version = "0.1.0"
-description = "Add your description here"
+description = "Build/publish wrapper for Linux wheels of microsoft/regorus (published on PyPI as celine-regorus)."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "maturin>=1.11.5",
 ]
 
 [dependency-groups]
 dev = [
+    "maturin>=1.11.5",
     "dumpster-cli>=1.3.2",
 ]
