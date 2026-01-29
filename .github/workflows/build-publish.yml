@@ -81,7 +81,7 @@ jobs:
                     -e GITHUB_TOKEN="$GITHUB_TOKEN" \
                     -v "${{ github.workspace }}/dist:/app/dist" \
                     celine-regorus-builder \
-                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist $ARGS
+                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist "$ARGS"
 
             - name: Smoke test wheel
               run: |
