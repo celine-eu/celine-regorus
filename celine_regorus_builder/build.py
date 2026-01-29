@@ -2,7 +2,7 @@ from __future__ import annotations
 import os, re, shutil, subprocess, tempfile
 from pathlib import Path
 from typing import Optional
-
+from datetime import datetime, timezone
 from .versions import tag_to_version
 from .wheel import inject_typing
 from .stubgen_rust import generate_regorus_pyi_from_lib_rs
@@ -16,10 +16,22 @@ dist_readme = root_dir / "stubs" / "README.dist.md"
 stub_dir = root_dir / "stubs"
 
 
-def update_pyproject_toml(path: Path, tag: str) -> None:
+def post_ts() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+def effective_version(upstream_version: str, force: bool) -> str:
+    return f"{upstream_version}.post{post_ts()}" if force else upstream_version
+
+
+def update_pyproject_toml(path: Path, tag: str, force: bool) -> None:
     """Patch upstream bindings/python/pyproject.toml for celine-regorus packaging."""
     content = path.read_text(encoding="utf-8")
     version = tag_to_version(tag)
+
+    if force:
+        version = effective_version(version, force)
+        print(f"[WARNING] Forced new build, version {version}")
 
     # name: regorus -> celine-regorus
     content = re.sub(
@@ -83,7 +95,7 @@ def update_pyproject_toml(path: Path, tag: str) -> None:
 
 
 def clone_and_build(
-    tag: str, output_dir: Path, dry_run: bool = False
+    tag: str, output_dir: Path, dry_run: bool = False, force: bool = False
 ) -> Optional[Path]:
     if dry_run:
         print(f"[DRY-RUN] Would clone and build tag: {tag}")
@@ -112,7 +124,7 @@ def clone_and_build(
 
         pyproject = py_bindings / "pyproject.toml"
         if pyproject.exists():
-            update_pyproject_toml(pyproject, tag)
+            update_pyproject_toml(pyproject, tag, force)
 
         if dist_readme.exists():
             shutil.copy(dist_readme, py_bindings / "README.md")

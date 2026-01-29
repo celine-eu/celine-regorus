@@ -14,10 +14,6 @@ on:
                 description: "Specific upstream tag to build (e.g. v0.5.0)"
                 required: false
                 type: string
-            pypi_tag:
-                description: "PyPI version suffix to avoid filename reuse (e.g. post1, post2, dev20260129)"
-                required: false
-                type: string
 
     schedule:
         - cron: "0 */6 * * *"
@@ -53,25 +49,20 @@ jobs:
               run: |
                   ARGS="--check-only"
 
-                  if [ -n "${{ inputs.tag }}" ]; then
-                  ARGS="$ARGS --tag ${{ inputs.tag }}"
+                  if [ -n "${{ github.event.inputs.tag }}" ]; then
+                    ARGS="$ARGS --tag ${{ github.event.inputs.tag }}"
                   fi
 
-                  if [ -n "${{ inputs.pypi_tag }}" ]; then
-                  ARGS="$ARGS --pypi-tag ${{ inputs.pypi_tag }}"
+                  if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+                    ARGS="$ARGS --force"
                   fi
 
-                  if [ "${{ inputs.force_build }}" = "true" ]; then
-                  ARGS="$ARGS --force"
-                  fi
-
-                  echo "Running: python main.py $ARGS"
                   python main.py $ARGS
 
     build_linux:
         name: Build wheel (Linux via Dockerfile)
         needs: check
-        if: needs.check.outputs.should_build == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_build)
+        if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
 
         steps:
@@ -84,25 +75,19 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ needs.check.outputs.tag }}
-                  PYPI_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.pypi_tag || '' }}
               run: |
                   mkdir -p dist
 
                   ARGS=()
                   if [ "${{ github.event_name == 'workflow_dispatch' && inputs.force_build || 'false' }}" = "true" ]; then
-                  ARGS+=(--force)
+                      ARGS+=(--force)
                   fi
-                  if [ -n "$PYPI_TAG" ]; then
-                  ARGS+=(--pypi-tag "$PYPI_TAG")
-                  fi
-
-                  echo "Docker build ARGS: ${ARGS[*]}"
 
                   docker run --rm \
-                  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
-                  -v "${{ github.workspace }}/dist:/app/dist" \
-                  celine-regorus-builder \
-                  python3 /app/main.py --tag "$TAG" --output-dir /app/dist "${ARGS[@]}"
+                    -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+                    -v "${{ github.workspace }}/dist:/app/dist" \
+                    celine-regorus-builder \
+                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist "${ARGS[@]}"
 
             - name: Smoke test wheel
               run: |
@@ -121,7 +106,7 @@ jobs:
     publish:
         name: Publish to PyPI
         needs: [check, build_linux]
-        if: needs.check.outputs.should_build == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_build)
+        if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
         environment: pypi
         permissions:
