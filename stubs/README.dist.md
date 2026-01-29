@@ -23,7 +23,7 @@ from regorus import Engine
 engine = Engine()
 
 engine.add_policy_from_file("./policy.rego")
-engine.set_input(json.dumps({ hello: "world" }))
+engine.set_input({ hello: "world" })
 
 # Evaluate rule
 result = engine.eval_rule("my_rule")
