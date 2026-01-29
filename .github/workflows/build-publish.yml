@@ -77,11 +77,17 @@ jobs:
                   TAG: ${{ needs.check.outputs.tag }}
               run: |
                   mkdir -p dist
+
+                  ARGS=()
+                  if [ "${{ github.event_name == 'workflow_dispatch' && inputs.force_build || 'false' }}" = "true" ]; then
+                      ARGS+=(--force)
+                  fi
+
                   docker run --rm \
                     -e GITHUB_TOKEN="$GITHUB_TOKEN" \
                     -v "${{ github.workspace }}/dist:/app/dist" \
                     celine-regorus-builder \
-                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist "$ARGS"
+                    python3 /app/main.py --tag "$TAG" --output-dir /app/dist "${ARGS[@]}"
 
             - name: Smoke test wheel
               run: |
