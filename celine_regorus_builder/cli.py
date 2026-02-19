@@ -1,3 +1,4 @@
+# ---- file: celine_regorus_builder/cli.py
 from __future__ import annotations
 import argparse, os
 from pathlib import Path
@@ -41,6 +42,12 @@ def main() -> int:
     p.add_argument("--output-dir", type=Path, default=Path("dist"))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--list-tags", action="store_true")
+    p.add_argument(
+        "--rust-target",
+        type=str,
+        default=None,
+        help="Rust target triple to pass to maturin (e.g. aarch64-apple-darwin)",
+    )
     args = p.parse_args()
 
     if args.list_tags:
@@ -67,7 +74,11 @@ def main() -> int:
 
     try:
         clone_and_build(
-            github_tag, args.output_dir, dry_run=args.dry_run, force=bool(args.force)
+            github_tag,
+            args.output_dir,
+            dry_run=args.dry_run,
+            force=bool(args.force),
+            rust_target=args.rust_target,
         )
         print("[SUCCESS] Build completed")
         _write_outputs(True, github_tag)

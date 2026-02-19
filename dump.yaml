@@ -1,3 +1,10 @@
+
+extensions:
+  - .yaml
+  - .toml
+  - .py
+  - .pyi
+
 contents:
   - main.py
   - README.md
@@ -5,3 +12,5 @@ contents:
   - taskfile.yaml
   - pyproject.toml
   - .github
+  - celine_regorus_builder
+  - stubs

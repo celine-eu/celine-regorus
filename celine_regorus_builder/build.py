@@ -95,7 +95,7 @@ def update_pyproject_toml(path: Path, tag: str, force: bool) -> None:
 
 
 def clone_and_build(
-    tag: str, output_dir: Path, dry_run: bool = False, force: bool = False
+    tag: str, output_dir: Path, dry_run: bool = False, force: bool = False, rust_target: Optional[str] = None,
 ) -> Optional[Path]:
     if dry_run:
         print(f"[DRY-RUN] Would clone and build tag: {tag}")
@@ -130,7 +130,11 @@ def clone_and_build(
             shutil.copy(dist_readme, py_bindings / "README.md")
 
         print("[INFO] Building wheel with maturin...")
-        subprocess.run(["maturin", "build", "--release"], cwd=py_bindings, check=True)
+        maturin_cmd = ["maturin", "build", "--release"]
+        if rust_target:
+            maturin_cmd += ["--target", rust_target]
+            print(f"[INFO] Cross-compiling for target: {rust_target}")
+        subprocess.run(maturin_cmd, cwd=py_bindings, check=True)
 
         wheels_dir = py_bindings / "target" / "wheels"
         wheels = list(wheels_dir.glob("*.whl"))

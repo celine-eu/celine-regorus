@@ -1,4 +1,4 @@
-name: Build and Publish (Linux, Docker, PyPI)
+name: Build and Publish
 permissions:
     id-token: write
 
@@ -48,19 +48,16 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   ARGS="--check-only"
-
                   if [ -n "${{ github.event.inputs.tag }}" ]; then
                     ARGS="$ARGS --tag ${{ github.event.inputs.tag }}"
                   fi
-
                   if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
                     ARGS="$ARGS --force"
                   fi
-
                   python main.py $ARGS
 
     build_linux:
-        name: Build wheel (Linux via Dockerfile)
+        name: Build wheel (Linux x86_64, Docker)
         needs: check
         if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
@@ -77,19 +74,17 @@ jobs:
                   TAG: ${{ needs.check.outputs.tag }}
               run: |
                   mkdir -p dist
-
                   ARGS=()
                   if [ "${{ github.event_name == 'workflow_dispatch' && inputs.force_build || 'false' }}" = "true" ]; then
                       ARGS+=(--force)
                   fi
-
                   docker run --rm \
                     -e GITHUB_TOKEN="$GITHUB_TOKEN" \
                     -v "${{ github.workspace }}/dist:/app/dist" \
                     celine-regorus-builder \
                     python3 /app/main.py --tag "$TAG" --output-dir /app/dist "${ARGS[@]}"
 
-            - name: Smoke test wheel
+            - name: Smoke test
               run: |
                   python -m pip install --upgrade pip
                   python -m pip install dist/*.whl
@@ -103,9 +98,65 @@ jobs:
                   name: wheels-linux
                   path: dist/*.whl
 
+    build_macos:
+        name: Build wheel (macOS ${{ matrix.target }})
+        needs: check
+        if: needs.check.outputs.should_build == 'true'
+        runs-on: ${{ matrix.runner }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - target: aarch64-apple-darwin
+                      runner: macos-latest        # macos-latest is ARM (M1)
+                    - target: x86_64-apple-darwin
+                      runner: macos-13            # macos-13 is the last Intel runner
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - uses: astral-sh/setup-uv@v5
+
+            - name: Install Python deps
+              run: uv sync
+
+            - name: Build wheel
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ needs.check.outputs.tag }}
+              run: |
+                  mkdir -p dist
+                  ARGS=(--tag "$TAG" --output-dir dist --rust-target ${{ matrix.target }})
+                  if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+                      ARGS+=(--force)
+                  fi
+                  uv run python main.py "${ARGS[@]}"
+
+            - name: Smoke test
+              run: |
+                  python -m pip install dist/*.whl
+                  python - <<'EOF'
+                  import regorus
+                  print("OK:", regorus)
+                  EOF
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: wheels-macos-${{ matrix.target }}
+                  path: dist/*.whl
+
     publish:
         name: Publish to PyPI
-        needs: [check, build_linux]
+        needs: [check, build_linux, build_macos]
         if: needs.check.outputs.should_build == 'true'
         runs-on: ubuntu-latest
         environment: pypi
