@@ -1,4 +1,3 @@
-# ---- file: celine_regorus_builder/cli.py
 from __future__ import annotations
 import argparse, os
 from pathlib import Path
@@ -36,18 +35,16 @@ def main() -> int:
     )
     p.add_argument("--check-only", action="store_true")
     p.add_argument("--force", action="store_true")
-    p.add_argument(
-        "--tag", type=str, help="Upstream tag to build (e.g. v0.5.0 or regorus-v0.5.0)"
-    )
+    p.add_argument("--tag", type=str, help="Upstream tag to build (e.g. v0.5.0 or regorus-v0.5.0)")
     p.add_argument("--output-dir", type=Path, default=Path("dist"))
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--list-tags", action="store_true")
-    p.add_argument(
-        "--rust-target",
-        type=str,
-        default=None,
-        help="Rust target triple to pass to maturin (e.g. aarch64-apple-darwin)",
-    )
+    p.add_argument("--rust-target", type=str, default=None,
+                   help="Rust target triple to pass to maturin (e.g. aarch64-apple-darwin)")
+    p.add_argument("--prepare-only", action="store_true",
+                   help="Clone and patch upstream source but skip maturin build")
+    p.add_argument("--prepare-dir", type=Path, default=Path("/tmp/regorus-src"),
+                   help="Where to clone upstream when using --prepare-only")
     args = p.parse_args()
 
     if args.list_tags:
@@ -61,11 +58,17 @@ def main() -> int:
         return 1
 
     pypi_version = fetch_pypi_version(PYPI_PACKAGE)
-
     should_build = bool(args.force) or needs_build(github_tag, pypi_version)
 
     if args.check_only:
         _write_outputs(should_build, github_tag)
+        return 0
+
+    if args.prepare_only:
+        from .build import clone_and_prepare
+        bindings_path = clone_and_prepare(github_tag, args.prepare_dir, force=bool(args.force))
+        print(f"[INFO] Source prepared at: {bindings_path}")
+        _write_outputs(True, github_tag)
         return 0
 
     if not should_build:

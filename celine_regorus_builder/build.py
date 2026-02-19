@@ -93,6 +93,37 @@ def update_pyproject_toml(path: Path, tag: str, force: bool) -> None:
     path.write_text(content, encoding="utf-8")
     print(f"[INFO] Updated upstream pyproject.toml for {PYPI_PACKAGE} v{version}")
 
+def clone_and_prepare(
+    tag: str,
+    prepare_dir: Path,
+    force: bool = False,
+) -> Path:
+    """Clone upstream and patch pyproject.toml but don't run maturin.
+    Returns the path to bindings/python so the caller can build it."""
+    repo_dir = prepare_dir / "regorus"
+    print(f"[INFO] Cloning {REGORUS_REPO} at tag {tag}...")
+    subprocess.run(
+        [
+            "git", "clone", "--depth", "1", "--branch", tag,
+            f"https://github.com/{REGORUS_REPO}.git",
+            str(repo_dir),
+        ],
+        check=True,
+    )
+
+    py_bindings = repo_dir / "bindings" / "python"
+    if not py_bindings.exists():
+        raise RuntimeError(f"Python bindings not found at {py_bindings}")
+
+    pyproject = py_bindings / "pyproject.toml"
+    if pyproject.exists():
+        update_pyproject_toml(pyproject, tag, force)
+
+    if dist_readme.exists():
+        shutil.copy(dist_readme, py_bindings / "README.md")
+
+    print(f"[INFO] Source ready at: {py_bindings}")
+    return py_bindings
 
 def clone_and_build(
     tag: str, output_dir: Path, dry_run: bool = False, force: bool = False, rust_target: Optional[str] = None,
