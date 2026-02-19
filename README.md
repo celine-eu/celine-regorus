@@ -81,7 +81,7 @@ dist/
 pip install celine-regorus
 ```
 
-> Note: Only Linux wheels are provided.  
+> Note: Only Linux and MacOS wheels are provided.  
 > On other platforms, installation may fail or attempt a source build.
 
 ---

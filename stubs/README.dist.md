@@ -36,8 +36,8 @@ print(result)
 
 - **Supported platforms**
   - Linux x86_64 ✅
+  - macOS ✅
 - **Not supported (by design)**
-  - macOS ❌
   - Windows ❌
   - Other architectures ❌
 
