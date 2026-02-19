@@ -86,7 +86,7 @@ def main() -> int:
             dry_run=args.dry_run,
             force=bool(args.force),
             rust_target=args.rust_target,
-            post_ts=args.post_ts,        # ← add
+            fixed_post_ts=args.post_ts,  # ← correct
         )
         print("[SUCCESS] Build completed")
         _write_outputs(True, github_tag)
