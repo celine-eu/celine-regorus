@@ -1,10 +1,13 @@
-FROM rust:1.93.0-slim
+# Dockerfile
+FROM ghcr.io/rust-lang/rust:nightly AS rust-base
 
-# Install Python and build dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+# Use the manylinux2014 image as the actual build base
+FROM quay.io/pypa/manylinux2014_x86_64
+
+# Install Rust inside manylinux
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.83.0 --profile minimal
+ENV PATH="/root/.cargo/bin:$PATH"
 
 WORKDIR /app
 
@@ -13,13 +16,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync
 ENV PATH="/root/.local/bin/:/app/.venv/bin:$PATH"
 
-
-# Copy build script
 COPY main.py /app/main.py
 COPY celine_regorus_builder/ /app/celine_regorus_builder/
 COPY stubs/ /app/stubs/
 
-# Create dist directory
 RUN mkdir -p /app/dist
 
 CMD ["python3", "/app/main.py", "--output-dir", "/app/dist"]
