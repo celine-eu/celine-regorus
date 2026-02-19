@@ -20,17 +20,20 @@ def post_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
-def effective_version(upstream_version: str, force: bool) -> str:
-    return f"{upstream_version}.post{post_ts()}" if force else upstream_version
+def effective_version(upstream_version: str, force: bool, fixed_post_ts: Optional[str] = None) -> str:
+    if not force:
+        return upstream_version
+    ts = fixed_post_ts or post_ts()
+    return f"{upstream_version}.post{ts}"
 
 
-def update_pyproject_toml(path: Path, tag: str, force: bool) -> None:
+def update_pyproject_toml(path: Path, tag: str, force: bool, fixed_post_ts: Optional[str] = None) -> None:
     """Patch upstream bindings/python/pyproject.toml for celine-regorus packaging."""
     content = path.read_text(encoding="utf-8")
     version = tag_to_version(tag)
 
     if force:
-        version = effective_version(version, force)
+        version = effective_version(version, force, fixed_post_ts)
         print(f"[WARNING] Forced new build, version {version}")
 
     # name: regorus -> celine-regorus
@@ -93,13 +96,27 @@ def update_pyproject_toml(path: Path, tag: str, force: bool) -> None:
     path.write_text(content, encoding="utf-8")
     print(f"[INFO] Updated upstream pyproject.toml for {PYPI_PACKAGE} v{version}")
 
+
+def _get_pyi_bytes(tag: str, py_bindings: Path) -> bytes:
+    stub_pyi = stub_dir / f"{tag}.pyi"
+    if stub_pyi.exists():
+        print(f"[INFO] Using stub from {stub_pyi}")
+        return stub_pyi.read_bytes()
+    lib_rs = py_bindings / "src" / "lib.rs"
+    print(f"[WARNING] No stub found for {tag}, generating from {lib_rs}")
+    if not lib_rs.exists():
+        raise RuntimeError(f"Cannot find upstream lib.rs at {lib_rs}")
+    return generate_regorus_pyi_from_lib_rs(lib_rs)
+
+
 def clone_and_prepare(
     tag: str,
     prepare_dir: Path,
     force: bool = False,
+    fixed_post_ts: Optional[str] = None,
 ) -> Path:
     """Clone upstream and patch pyproject.toml but don't run maturin.
-    Returns the path to bindings/python so the caller can build it."""
+    Returns the path to bindings/python so the caller (e.g. maturin-action) can build it."""
     repo_dir = prepare_dir / "regorus"
     print(f"[INFO] Cloning {REGORUS_REPO} at tag {tag}...")
     subprocess.run(
@@ -117,7 +134,7 @@ def clone_and_prepare(
 
     pyproject = py_bindings / "pyproject.toml"
     if pyproject.exists():
-        update_pyproject_toml(pyproject, tag, force)
+        update_pyproject_toml(pyproject, tag, force, fixed_post_ts)
 
     if dist_readme.exists():
         shutil.copy(dist_readme, py_bindings / "README.md")
@@ -125,40 +142,26 @@ def clone_and_prepare(
     print(f"[INFO] Source ready at: {py_bindings}")
     return py_bindings
 
+
 def clone_and_build(
-    tag: str, output_dir: Path, dry_run: bool = False, force: bool = False, rust_target: Optional[str] = None,
+    tag: str,
+    output_dir: Path,
+    dry_run: bool = False,
+    force: bool = False,
+    rust_target: Optional[str] = None,
+    fixed_post_ts: Optional[str] = None,
 ) -> Optional[Path]:
     if dry_run:
         print(f"[DRY-RUN] Would clone and build tag: {tag}")
         return None
 
     with tempfile.TemporaryDirectory() as tmp:
-        repo_dir = Path(tmp) / "regorus"
-        print(f"[INFO] Cloning {REGORUS_REPO} at tag {tag}...")
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                "--branch",
-                tag,
-                f"https://github.com/{REGORUS_REPO}.git",
-                str(repo_dir),
-            ],
-            check=True,
+        py_bindings = clone_and_prepare(
+            tag=tag,
+            prepare_dir=Path(tmp),
+            force=force,
+            fixed_post_ts=fixed_post_ts,
         )
-
-        py_bindings = repo_dir / "bindings" / "python"
-        if not py_bindings.exists():
-            raise RuntimeError(f"Python bindings not found at {py_bindings}")
-
-        pyproject = py_bindings / "pyproject.toml"
-        if pyproject.exists():
-            update_pyproject_toml(pyproject, tag, force)
-
-        if dist_readme.exists():
-            shutil.copy(dist_readme, py_bindings / "README.md")
 
         print("[INFO] Building wheel with maturin...")
         maturin_cmd = ["maturin", "build", "--release"]
@@ -172,19 +175,7 @@ def clone_and_build(
         if not wheels:
             raise RuntimeError("No wheel files found after build")
 
-        stub_pyi = stub_dir / f"{tag}.pyi"
-        if stub_pyi.exists():
-            print(f"[INFO] Using stub from {stub_pyi}")
-            pyi_bytes = stub_pyi.read_bytes()
-        else:
-            # Generate stubs from upstream Rust binding file (not from handwritten stubs)
-            lib_rs = py_bindings / "src" / "lib.rs"
-            print(
-                f"[WARNING] Attempt to generate stub from {lib_rs}. Cannot find {stub_pyi}"
-            )
-            if not lib_rs.exists():
-                raise RuntimeError(f"Cannot find upstream lib.rs at {lib_rs}")
-            pyi_bytes = generate_regorus_pyi_from_lib_rs(lib_rs)
+        pyi_bytes = _get_pyi_bytes(tag, py_bindings)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         for w in wheels:

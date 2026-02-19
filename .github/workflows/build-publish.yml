@@ -35,9 +35,13 @@ jobs:
             should_build: ${{ steps.check.outputs.should_build }}
             tag: ${{ steps.check.outputs.tag }}
             version: ${{ steps.check.outputs.version }}
+            post_ts: ${{ steps.ts.outputs.post_ts }}
 
         steps:
             - uses: actions/checkout@v4
+
+            - id: ts
+              run: echo "post_ts=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
 
             - uses: actions/setup-python@v5
               with:
@@ -74,8 +78,9 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ needs.check.outputs.tag }}
+                  POST_TS: ${{ needs.check.outputs.post_ts }}
               run: |
-                  ARGS=(--prepare-only --tag "$TAG" --prepare-dir "$GITHUB_WORKSPACE/.regorus-src")
+                  ARGS=(--prepare-only --tag "$TAG" --prepare-dir "$GITHUB_WORKSPACE/.regorus-src" --post-ts "$POST_TS")
                   if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
                       ARGS+=(--force)
                   fi
@@ -98,19 +103,13 @@ jobs:
                   uv run python - <<'EOF'
                   import os
                   from pathlib import Path
-                  from celine_regorus_builder.build import stub_dir
+                  from celine_regorus_builder.build import stub_dir, _get_pyi_bytes
                   from celine_regorus_builder.wheel import inject_typing
 
                   tag = os.environ["TAG"]
                   dist = Path("dist")
-                  stub_pyi = stub_dir / f"{tag}.pyi"
-
-                  if not stub_pyi.exists():
-                      from celine_regorus_builder.stubgen_rust import generate_regorus_pyi_from_lib_rs
-                      lib_rs = Path(os.environ["GITHUB_WORKSPACE"]) / ".regorus-src/regorus/bindings/python/src/lib.rs"
-                      pyi_bytes = generate_regorus_pyi_from_lib_rs(lib_rs)
-                  else:
-                      pyi_bytes = stub_pyi.read_bytes()
+                  lib_rs = Path(os.environ["GITHUB_WORKSPACE"]) / ".regorus-src/regorus/bindings/python/src/lib.rs"
+                  pyi_bytes = _get_pyi_bytes(tag, lib_rs.parent.parent)
 
                   for w in dist.glob("*.whl"):
                       inject_typing(w, pyi_bytes)
@@ -127,8 +126,6 @@ jobs:
                   name: wheels-linux
                   path: dist/*.whl
 
-
-
     build_macos:
         name: Build wheel (macOS ${{ matrix.target }})
         needs: check
@@ -139,9 +136,9 @@ jobs:
             matrix:
                 include:
                     - target: aarch64-apple-darwin
-                      runner: macos-latest        # macos-latest is ARM (M1)
+                      runner: macos-latest
                     - target: x86_64-apple-darwin
-                      runner: macos-15-intel 
+                      runner: macos-15-intel
 
         steps:
             - uses: actions/checkout@v4
@@ -164,9 +161,10 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ needs.check.outputs.tag }}
+                  POST_TS: ${{ needs.check.outputs.post_ts }}
               run: |
                   mkdir -p dist
-                  ARGS=(--tag "$TAG" --output-dir dist --rust-target ${{ matrix.target }})
+                  ARGS=(--tag "$TAG" --output-dir dist --rust-target ${{ matrix.target }} --post-ts "$POST_TS")
                   if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
                       ARGS+=(--force)
                   fi
@@ -174,11 +172,8 @@ jobs:
 
             - name: Smoke test
               run: |
-                  python -m pip install dist/*.whl
-                  python - <<'EOF'
-                  import regorus
-                  print("OK:", regorus)
-                  EOF
+                  pip install dist/*.whl
+                  python -c "import regorus; print('OK:', regorus)"
 
             - uses: actions/upload-artifact@v4
               with:
@@ -200,7 +195,7 @@ jobs:
                   path: dist
                   merge-multiple: true
 
-            - name: List wheels to be published   # ← ADD THIS
+            - name: List wheels to be published
               run: ls -lah dist/
 
             - name: Publish

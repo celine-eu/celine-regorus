@@ -45,6 +45,10 @@ def main() -> int:
                    help="Clone and patch upstream source but skip maturin build")
     p.add_argument("--prepare-dir", type=Path, default=Path("/tmp/regorus-src"),
                    help="Where to clone upstream when using --prepare-only")
+
+    p.add_argument("--post-ts", type=str, default=None,
+                help="Fixed post-release timestamp (YYYYmmddHHMMSS) to use across all platform builds")
+
     args = p.parse_args()
 
     if args.list_tags:
@@ -82,6 +86,7 @@ def main() -> int:
             dry_run=args.dry_run,
             force=bool(args.force),
             rust_target=args.rust_target,
+            post_ts=args.post_ts,        # ← add
         )
         print("[SUCCESS] Build completed")
         _write_outputs(True, github_tag)
