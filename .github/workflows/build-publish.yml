@@ -200,6 +200,9 @@ jobs:
                   path: dist
                   merge-multiple: true
 
+            - name: List wheels to be published   # ← ADD THIS
+              run: ls -lah dist/
+
             - name: Publish
               uses: pypa/gh-action-pypi-publish@release/v1
               with:
