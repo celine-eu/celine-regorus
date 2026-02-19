@@ -65,22 +65,17 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - uses: actions/setup-python@v5
-              with:
-                  python-version: "3.11"
-
             - uses: astral-sh/setup-uv@v5
 
             - name: Install Python deps
               run: uv sync
 
-            - name: Fetch and prepare upstream source
+            - name: Prepare upstream source
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ needs.check.outputs.tag }}
               run: |
-                  mkdir -p dist
-                  ARGS=(--tag "$TAG" --output-dir dist --prepare-only)
+                  ARGS=(--prepare-only --tag "$TAG" --prepare-dir "$GITHUB_WORKSPACE/.regorus-src")
                   if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
                       ARGS+=(--force)
                   fi
@@ -90,9 +85,37 @@ jobs:
               uses: PyO3/maturin-action@v1
               with:
                   command: build
-                  args: --release --out dist/
-                  working-directory: /tmp/regorus-src/bindings/python   # see note below
+                  args: --release --out ${{ github.workspace }}/dist
+                  working-directory: ${{ github.workspace }}/.regorus-src/regorus/bindings/python
                   manylinux: auto
+              env:
+                  NODE_OPTIONS: "--max-old-space-size=4096"
+
+            - name: Inject typing stubs
+              env:
+                  TAG: ${{ needs.check.outputs.tag }}
+              run: |
+                  uv run python - <<'EOF'
+                  import os
+                  from pathlib import Path
+                  from celine_regorus_builder.build import stub_dir
+                  from celine_regorus_builder.wheel import inject_typing
+
+                  tag = os.environ["TAG"]
+                  dist = Path("dist")
+                  stub_pyi = stub_dir / f"{tag}.pyi"
+
+                  if not stub_pyi.exists():
+                      from celine_regorus_builder.stubgen_rust import generate_regorus_pyi_from_lib_rs
+                      lib_rs = Path(os.environ["GITHUB_WORKSPACE"]) / ".regorus-src/regorus/bindings/python/src/lib.rs"
+                      pyi_bytes = generate_regorus_pyi_from_lib_rs(lib_rs)
+                  else:
+                      pyi_bytes = stub_pyi.read_bytes()
+
+                  for w in dist.glob("*.whl"):
+                      inject_typing(w, pyi_bytes)
+                      print(f"[INFO] Injected stubs into {w.name}")
+                  EOF
 
             - name: Smoke test
               run: |
@@ -103,6 +126,8 @@ jobs:
               with:
                   name: wheels-linux
                   path: dist/*.whl
+
+
 
     build_macos:
         name: Build wheel (macOS ${{ matrix.target }})
