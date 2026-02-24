@@ -70,7 +70,12 @@ def main() -> int:
 
     if args.prepare_only:
         from .build import clone_and_prepare
-        bindings_path = clone_and_prepare(github_tag, args.prepare_dir, force=bool(args.force))
+        bindings_path = clone_and_prepare(
+            github_tag,
+            args.prepare_dir,
+            force=bool(args.force),
+            fixed_post_ts=args.post_ts,
+        )
         print(f"[INFO] Source prepared at: {bindings_path}")
         _write_outputs(True, github_tag)
         return 0
