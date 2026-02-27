@@ -47,7 +47,7 @@ def main() -> int:
                    help="Where to clone upstream when using --prepare-only")
 
     p.add_argument("--post-ts", type=str, default=None,
-                help="Fixed post-release timestamp (YYYYmmddHHMMSS) to use across all platform builds")
+                help="Fixed post-release timestamp (YYYYmmddHHMMSS) to use across all platform builds; in --force mode and without this value, existing PyPI .post version is reused when possible")
 
     args = p.parse_args()
 
@@ -75,6 +75,7 @@ def main() -> int:
             args.prepare_dir,
             force=bool(args.force),
             fixed_post_ts=args.post_ts,
+            existing_pypi_version=pypi_version,
         )
         print(f"[INFO] Source prepared at: {bindings_path}")
         _write_outputs(True, github_tag)
@@ -91,7 +92,8 @@ def main() -> int:
             dry_run=args.dry_run,
             force=bool(args.force),
             rust_target=args.rust_target,
-            fixed_post_ts=args.post_ts,  # ← correct
+            fixed_post_ts=args.post_ts,
+            existing_pypi_version=pypi_version,
         )
         print("[SUCCESS] Build completed")
         _write_outputs(True, github_tag)

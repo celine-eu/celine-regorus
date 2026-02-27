@@ -3,7 +3,7 @@ import os, re, shutil, subprocess, tempfile
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone
-from .versions import tag_to_version
+from .versions import base, tag_to_version
 from .wheel import inject_typing
 from .stubgen_rust import generate_regorus_pyi_from_lib_rs
 
@@ -20,21 +20,46 @@ def post_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
-def effective_version(upstream_version: str, force: bool, fixed_post_ts: Optional[str] = None) -> str:
+def effective_version(
+    upstream_version: str,
+    force: bool,
+    fixed_post_ts: Optional[str] = None,
+    existing_pypi_version: Optional[str] = None,
+) -> str:
     if not force:
         return upstream_version
+    if fixed_post_ts:
+        return f"{upstream_version}.post{fixed_post_ts}"
+    if (
+        existing_pypi_version
+        and ".post" in existing_pypi_version
+        and base(existing_pypi_version) == upstream_version
+    ):
+        print(f"[INFO] Reusing existing PyPI post-release version: {existing_pypi_version}")
+        return existing_pypi_version
     ts = fixed_post_ts or post_ts()
     return f"{upstream_version}.post{ts}"
 
 
-def update_pyproject_toml(path: Path, tag: str, force: bool, fixed_post_ts: Optional[str] = None) -> None:
+def update_pyproject_toml(
+    path: Path,
+    tag: str,
+    force: bool,
+    fixed_post_ts: Optional[str] = None,
+    existing_pypi_version: Optional[str] = None,
+) -> None:
     """Patch upstream bindings/python/pyproject.toml for celine-regorus packaging."""
     content = path.read_text(encoding="utf-8")
     version = tag_to_version(tag)
 
     if force:
-        version = effective_version(version, force, fixed_post_ts)
-        print(f"[WARNING] Forced new build, version {version}")
+        version = effective_version(
+            version,
+            force,
+            fixed_post_ts=fixed_post_ts,
+            existing_pypi_version=existing_pypi_version,
+        )
+        print(f"[INFO] Forced build, using version {version}")
 
     # name: regorus -> celine-regorus
     content = re.sub(
@@ -114,6 +139,7 @@ def clone_and_prepare(
     prepare_dir: Path,
     force: bool = False,
     fixed_post_ts: Optional[str] = None,
+    existing_pypi_version: Optional[str] = None,
 ) -> Path:
     """Clone upstream and patch pyproject.toml but don't run maturin.
     Returns the path to bindings/python so the caller (e.g. maturin-action) can build it."""
@@ -134,7 +160,13 @@ def clone_and_prepare(
 
     pyproject = py_bindings / "pyproject.toml"
     if pyproject.exists():
-        update_pyproject_toml(pyproject, tag, force, fixed_post_ts)
+        update_pyproject_toml(
+            pyproject,
+            tag,
+            force,
+            fixed_post_ts=fixed_post_ts,
+            existing_pypi_version=existing_pypi_version,
+        )
 
     if dist_readme.exists():
         shutil.copy(dist_readme, py_bindings / "README.md")
@@ -150,6 +182,7 @@ def clone_and_build(
     force: bool = False,
     rust_target: Optional[str] = None,
     fixed_post_ts: Optional[str] = None,
+    existing_pypi_version: Optional[str] = None,
 ) -> Optional[Path]:
     if dry_run:
         print(f"[DRY-RUN] Would clone and build tag: {tag}")
@@ -161,6 +194,7 @@ def clone_and_build(
             prepare_dir=Path(tmp),
             force=force,
             fixed_post_ts=fixed_post_ts,
+            existing_pypi_version=existing_pypi_version,
         )
 
         print("[INFO] Building wheel with maturin...")
